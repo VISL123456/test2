@@ -3,7 +3,7 @@ from PIL import Image, ImageDraw, ImageStat
 import numpy as np
 
 # Tittel på appen
-st.title("Drone Fotoinnstillingsanbefaling (Uten Google API)")
+st.title("Drone Fotoinnstillingsanbefaling med Forbedret Eksponeringsanalyse")
 
 # Opplastingsstatus
 if 'uploaded' not in st.session_state:
@@ -25,15 +25,28 @@ if not st.session_state['uploaded']:
         image = Image.open(uploaded_file)
         st.image(image, caption='Opplastet bilde', use_column_width=True)
         
-        # Funksjon for å analysere lysstyrken i bildet
-        def analyze_brightness(image):
-            # Konverter bildet til gråtoner og beregn gjennomsnittlig lysstyrke
+        # Funksjon for å analysere lysstyrken i bildet over ulike regioner
+        def analyze_brightness_regions(image, grid_size=(4, 4)):
             grayscale_image = image.convert("L")
-            stat = ImageStat.Stat(grayscale_image)
-            brightness = stat.mean[0] / 255  # Normaliser lysstyrken til verdi mellom 0 og 1
-            return brightness
+            width, height = grayscale_image.size
+            region_width = width // grid_size[0]
+            region_height = height // grid_size[1]
+            brightness_map = []
 
-        # Funksjon for å analysere dominerende farger
+            for i in range(grid_size[0]):
+                for j in range(grid_size[1]):
+                    left = i * region_width
+                    upper = j * region_height
+                    right = (i + 1) * region_width
+                    lower = (j + 1) * region_height
+                    region = grayscale_image.crop((left, upper, right, lower))
+                    stat = ImageStat.Stat(region)
+                    brightness = stat.mean[0] / 255  # Normaliser lysstyrke
+                    brightness_map.append((i, j, brightness))
+                    
+            return brightness_map
+
+        # Funksjon for å analysere gjennomsnittsfarge
         def analyze_colors(image):
             image = image.resize((100, 100))  # Reduser størrelsen for raskere beregning
             colors = np.array(image).reshape(-1, 3)
@@ -41,26 +54,44 @@ if not st.session_state['uploaded']:
             return avg_color
 
         # Beregn lysstyrke og farger
-        brightness = analyze_brightness(image)
+        brightness_map = analyze_brightness_regions(image)
         avg_color = analyze_colors(image)
 
-        # Generer anbefalinger basert på lysstyrke og farge
-        def generate_recommendations(brightness, avg_color, fixed_aperture=None):
-            iso = 100
-            shutter_speed = "1/250s"
+        # Generer anbefalinger med og uten ND-filter basert på lysstyrke og farge
+        def generate_recommendations(brightness_map, avg_color, fixed_aperture=None):
+            iso_no_filter = 100
+            iso_with_filter = 100
+            shutter_speed_no_filter = "1/250s"
+            shutter_speed_with_filter = "1/250s"
             aperture = fixed_aperture if fixed_aperture else "f/5.6"
             white_balance = "Auto"
 
-            # Juster ISO og lukkerhastighet basert på lysstyrke
-            if brightness < 0.3:
-                iso = 800
-                shutter_speed = "1/125s"
-            elif brightness < 0.6:
-                iso = 400
-                shutter_speed = "1/200s"
+            # Juster ISO og lukkerhastighet basert på gjennomsnittlig lysstyrke i ulike regioner
+            overexposed_regions = [b for _, _, b in brightness_map if b > 0.8]
+            underexposed_regions = [b for _, _, b in brightness_map if b < 0.2]
+            avg_brightness = np.mean([b for _, _, b in brightness_map])
+
+            # Anbefalinger uten ND-filter
+            if avg_brightness < 0.3 or underexposed_regions:
+                iso_no_filter = 800
+                shutter_speed_no_filter = "1/125s"
+            elif avg_brightness < 0.6:
+                iso_no_filter = 400
+                shutter_speed_no_filter = "1/200s"
             else:
-                iso = 100
-                shutter_speed = "1/500s"
+                iso_no_filter = 100
+                shutter_speed_no_filter = "1/500s"
+
+            # Anbefalinger med ND-filter (redusert lysinnslipp, høyere ISO)
+            if avg_brightness > 0.8 or overexposed_regions:
+                iso_with_filter = 1600
+                shutter_speed_with_filter = "1/60s"
+            elif avg_brightness < 0.6:
+                iso_with_filter = 800
+                shutter_speed_with_filter = "1/125s"
+            else:
+                iso_with_filter = 400
+                shutter_speed_with_filter = "1/200s"
 
             # Juster hvitbalanse basert på dominerende farge
             r, g, b = avg_color
@@ -72,8 +103,15 @@ if not st.session_state['uploaded']:
                 white_balance = "Solnedgang"
 
             recommendations = f"""Anbefalte Innstillinger:
-            - ISO: {iso}
-            - Lukkerhastighet: {shutter_speed}
+            Uten ND-filter:
+            - ISO: {iso_no_filter}
+            - Lukkerhastighet: {shutter_speed_no_filter}
+            - Blenderåpning: {aperture}
+            - Hvitbalanse: {white_balance}
+
+            Med ND-filter:
+            - ISO: {iso_with_filter}
+            - Lukkerhastighet: {shutter_speed_with_filter}
             - Blenderåpning: {aperture}
             - Hvitbalanse: {white_balance}
             """
@@ -82,21 +120,25 @@ if not st.session_state['uploaded']:
             return recommendations
 
         # Funksjon for å markere områder på bildet som trenger oppmerksomhet
-        def highlight_image_areas(image, brightness, avg_color):
+        def highlight_image_areas(image, brightness_map):
             image_with_boxes = image.copy()
             draw = ImageDraw.Draw(image_with_boxes)
             width, height = image.size
-            
-            # Marker områder basert på lysstyrke og farger
+            region_width = width // 4
+            region_height = height // 4
+
             recommendations_text = ""
-            if brightness > 0.8:
-                color = "red"
-                recommendations_text += "Områder er overeksponert - vurder lavere ISO.\n"
-                draw.rectangle([(width*0.1, height*0.1), (width*0.9, height*0.9)], outline=color, width=5)
-            elif brightness < 0.2:
-                color = "red"
-                recommendations_text += "Områder er undereksponert - vurder høyere ISO.\n"
-                draw.rectangle([(width*0.1, height*0.1), (width*0.9, height*0.9)], outline=color, width=5)
+            for i, j, brightness in brightness_map:
+                left = i * region_width
+                upper = j * region_height
+                right = (i + 1) * region_width
+                lower = (j + 1) * region_height
+                if brightness > 0.8:
+                    draw.rectangle([(left, upper), (right, lower)], outline="red", width=3)
+                    recommendations_text += f"Region ({i+1},{j+1}) er overeksponert - vurder lavere ISO eller bruk av ND-filter.\n"
+                elif brightness < 0.2:
+                    draw.rectangle([(left, upper), (right, lower)], outline="blue", width=3)
+                    recommendations_text += f"Region ({i+1},{j+1}) er undereksponert - vurder høyere ISO.\n"
 
             st.image(image_with_boxes, caption="Bilde med markerte områder", use_column_width=True)
             if recommendations_text:
@@ -107,15 +149,14 @@ if not st.session_state['uploaded']:
 
         # Generer og vis anbefalinger
         st.write("Analyseresultater og anbefalte innstillinger:")
-        generate_recommendations(brightness, avg_color, aperture_value)
+        generate_recommendations(brightness_map, avg_color, aperture_value)
         
         # Marker og vis bilde med anbefalte justeringer
         st.write("Bilde med markerte områder som trenger oppmerksomhet:")
-        highlight_image_areas(image, brightness, avg_color)
+        highlight_image_areas(image, brightness_map)
 
 # Knapp for å laste opp et nytt bilde plassert nederst
 if st.session_state['uploaded']:
     if st.button("Last opp et nytt bilde"):
         st.session_state['uploaded'] = False  # Nullstiller opplastingsstatus
         st.write("Du kan nå laste opp et nytt bilde ved å bruke opplastingsboksen ovenfor.")
-
