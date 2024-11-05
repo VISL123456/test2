@@ -1,5 +1,5 @@
 import streamlit as st
-from PIL import Image, ImageDraw, ImageStat
+from PIL import Image, ImageDraw, ImageStat, ExifTags
 import numpy as np
 
 # Tittel på appen
@@ -23,6 +23,23 @@ if not st.session_state['uploaded']:
     if uploaded_file is not None:
         st.session_state['uploaded'] = True  # Oppdater opplastingsstatus
         image = Image.open(uploaded_file)
+
+        # Bevarer bildeorienteringen
+        for orientation in ExifTags.TAGS.keys():
+            if ExifTags.TAGS[orientation] == 'Orientation':
+                break
+        try:
+            exif = dict(image._getexif().items())
+            if exif[orientation] == 3:
+                image = image.rotate(180, expand=True)
+            elif exif[orientation] == 6:
+                image = image.rotate(270, expand=True)
+            elif exif[orientation] == 8:
+                image = image.rotate(90, expand=True)
+        except (AttributeError, KeyError, IndexError):
+            # Bildet har ingen EXIF-data; ingen rotasjon nødvendig
+            pass
+
         st.image(image, caption='Opplastet bilde', use_column_width=True)
         
         # Funksjon for å analysere lysstyrken i bildet over et 20x20 grid
@@ -83,18 +100,28 @@ if not st.session_state['uploaded']:
                 iso_no_filter = 100
                 shutter_speed_no_filter = "1/500s"
 
-            # Anbefalinger med ND-filter (for svært lyse forhold)
+            # Anbefalinger med ND-filter basert på eksponering
             if avg_brightness > 0.8 or overexposed_regions:
                 iso_with_filter = 1600
                 shutter_speed_with_filter = "1/60s"
-                nd_filter = "ND8"  # Velg ND8 for svært lyse forhold
-            elif avg_brightness > 0.6:
+                if avg_brightness > 0.9:
+                    nd_filter = "ND64"
+                elif avg_brightness > 0.8:
+                    nd_filter = "ND32"
+                elif avg_brightness > 0.7:
+                    nd_filter = "ND16"
+                elif avg_brightness > 0.6:
+                    nd_filter = "ND8"
+                else:
+                    nd_filter = "ND4"
+            elif avg_brightness < 0.6:
                 iso_with_filter = 800
                 shutter_speed_with_filter = "1/125s"
-                nd_filter = "ND4"  # Velg ND4 for moderat lyse forhold
+                nd_filter = "ND4"
             else:
                 iso_with_filter = 400
                 shutter_speed_with_filter = "1/200s"
+                nd_filter = "ND4"
 
             # Juster hvitbalanse basert på dominerende farge
             r, g, b = avg_color
