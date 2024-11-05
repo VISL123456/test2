@@ -130,23 +130,29 @@ if not st.session_state['uploaded']:
             region_width = width // 20
             region_height = height // 20
 
-            recommendations_text = ""
+            overexposed_found = False
+            underexposed_found = False
             for i, j, brightness in brightness_map:
                 left = i * region_width
                 upper = j * region_height
                 right = (i + 1) * region_width
                 lower = (j + 1) * region_height
                 if brightness > 0.8:
-                    draw.rectangle([(left, upper), (right, lower)], outline="red", width=3)
-                    recommendations_text += f"Region ({i+1},{j+1}) er overeksponert - vurder lavere ISO eller bruk av ND-filter.\n"
+                    overexposed_found = True
+                    draw.rectangle([(left, upper), (right, lower)], outline="red", width=3, fill=(255, 0, 0, 50))
                 elif brightness < 0.2:
-                    draw.rectangle([(left, upper), (right, lower)], outline="blue", width=3)
-                    recommendations_text += f"Region ({i+1},{j+1}) er undereksponert - vurder høyere ISO.\n"
+                    underexposed_found = True
+                    draw.rectangle([(left, upper), (right, lower)], outline="red", width=3, fill=(255, 0, 0, 50))
 
             st.image(image_with_boxes, caption="Bilde med markerte områder", use_column_width=True)
-            if recommendations_text:
-                st.write("Anbefalinger for justeringer:")
-                st.write(recommendations_text)
+            
+            # Generell anbefaling basert på over- eller undereksponering
+            if overexposed_found and underexposed_found:
+                st.write("Generell anbefaling: Bildet inneholder både overeksponerte og undereksponerte områder. Juster ISO, bruk ND-filter og kontroller lysforholdene.")
+            elif overexposed_found:
+                st.write("Generell anbefaling: Bildet har overeksponerte områder. Vurder å bruke et ND-filter og redusere ISO.")
+            elif underexposed_found:
+                st.write("Generell anbefaling: Bildet har undereksponerte områder. Øk ISO for å få bedre eksponering.")
             else:
                 st.write("Bildet ser ut til å ha balanserte lysforhold.")
 
@@ -163,4 +169,3 @@ if st.session_state['uploaded']:
     if st.button("Last opp et nytt bilde"):
         st.session_state['uploaded'] = False  # Nullstiller opplastingsstatus
         st.write("Du kan nå laste opp et nytt bilde ved å bruke opplastingsboksen ovenfor.")
-
