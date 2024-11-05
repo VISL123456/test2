@@ -1,9 +1,40 @@
 import streamlit as st
 from PIL import Image, ImageDraw, ImageStat, ExifTags
 import numpy as np
+import json
+import os
+
+# Fil for lagring av brukerdata
+feedback_file = "user_feedback.json"
+
+# Henter tilbakemeldinger fra fil
+def load_feedback():
+    if os.path.exists(feedback_file):
+        with open(feedback_file, "r") as f:
+            return json.load(f)
+    return {"iso": [], "shutter_speed": [], "nd_filter": []}
+
+# Lagrer tilbakemeldinger til fil
+def save_feedback(feedback):
+    data = load_feedback()
+    for key in feedback:
+        data[key].append(feedback[key])
+    with open(feedback_file, "w") as f:
+        json.dump(data, f)
+
+# Brukerdata for læring
+user_feedback = load_feedback()
+
+# Genererer gjennomsnittlig anbefaling basert på tidligere tilbakemeldinger
+def average_user_feedback():
+    if user_feedback["iso"]:
+        avg_iso = int(np.mean(user_feedback["iso"]))
+    else:
+        avg_iso = 400  # Standardverdi hvis ingen data
+    return avg_iso
 
 # Tittel på appen
-st.title("Avansert Drone Fotoinnstillingsanbefaling med Nøyaktig Eksponeringsanalyse og ND-filter")
+st.title("Selvforbedrende Drone Fotoinnstillingsanbefaling med Brukerlæring")
 
 # Opplastingsstatus
 if 'uploaded' not in st.session_state:
@@ -59,11 +90,10 @@ if not st.session_state['uploaded']:
                         lower = (j + 1) * region_height
                         region = grayscale_image.crop((left, upper, right, lower))
                         stat = ImageStat.Stat(region)
-                        brightness = stat.mean[0] / 255  # Normaliser lysstyrken til verdi mellom 0 og 1
+                        brightness = stat.mean[0] / 255
                         brightness_map.append(brightness)
                 all_brightness_values.append(np.mean(brightness_map))
 
-            # Ta gjennomsnitt, standardavvik og median av flere analyserunder
             return np.mean(all_brightness_values), np.std(all_brightness_values), np.median(all_brightness_values)
 
         # Funksjon for å analysere gjennomsnittsfarge
@@ -79,29 +109,16 @@ if not st.session_state['uploaded']:
 
         # Generer anbefalinger med og uten ND-filter basert på lysstyrke og farge
         def generate_recommendations(avg_brightness, brightness_std, median_brightness, avg_color, fixed_aperture=None):
-            iso_no_filter = 100
-            iso_with_filter = 100
+            # Bruker tidligere tilbakemelding for ISO
+            iso_no_filter = average_user_feedback()
+            iso_with_filter = iso_no_filter * 2  # Økt ISO med ND-filter
             shutter_speed_no_filter = "1/250s"
-            shutter_speed_with_filter = "1/250s"
+            shutter_speed_with_filter = "1/125s"
             aperture = fixed_aperture if fixed_aperture else "f/5.6"
             white_balance = "Auto"
             nd_filter = "Ingen"
 
-            # Juster ISO og lukkerhastighet basert på gjennomsnittlig og median lysstyrke, samt standardavvik
-            if avg_brightness < 0.3 or median_brightness < 0.3:
-                iso_no_filter = 800
-                shutter_speed_no_filter = "1/125s"
-            elif avg_brightness < 0.6:
-                iso_no_filter = 400
-                shutter_speed_no_filter = "1/200s"
-            else:
-                iso_no_filter = 100
-                shutter_speed_no_filter = "1/500s"
-
-            # Anbefalinger med ND-filter justert basert på lysstyrkenivå
             if avg_brightness > 0.8 or brightness_std > 0.2:
-                iso_with_filter = 1600
-                shutter_speed_with_filter = "1/60s"
                 if avg_brightness > 0.9 or brightness_std > 0.25:
                     nd_filter = "ND64"
                 elif avg_brightness > 0.8:
@@ -113,15 +130,8 @@ if not st.session_state['uploaded']:
                 else:
                     nd_filter = "ND4"
             elif avg_brightness < 0.6:
-                iso_with_filter = 800
-                shutter_speed_with_filter = "1/125s"
-                nd_filter = "ND4"
-            else:
-                iso_with_filter = 400
-                shutter_speed_with_filter = "1/200s"
                 nd_filter = "ND4"
 
-            # Juster hvitbalanse basert på dominerende farge
             r, g, b = avg_color
             if r > 200 and g > 200 and b > 200:
                 white_balance = "Dagslys"
@@ -145,46 +155,21 @@ if not st.session_state['uploaded']:
             """
             
             st.write(recommendations)
-            return recommendations
-
-        # Funksjon for å markere over- og undereksponerte områder
-        def highlight_image_areas(image, avg_brightness, brightness_std, median_brightness):
-            image_with_boxes = image.convert("RGBA")
-            overlay = Image.new("RGBA", image_with_boxes.size, (255, 255, 255, 0))
-            draw = ImageDraw.Draw(overlay)
-            width, height = image.size
-            region_width = width // 20
-            region_height = height // 20
-
-            overexposed = avg_brightness > 0.8 or brightness_std > 0.2
-            underexposed = avg_brightness < 0.3 or median_brightness < 0.3
-
-            # Hvis bildet er overeksponert, fyll med grønn skravering
-            if overexposed:
-                draw.rectangle([(0, 0), (width, height)], outline="green", width=3, fill=(0, 255, 0, 80))
-            # Hvis bildet er undereksponert, fyll med rød skravering
-            if underexposed:
-                draw.rectangle([(0, 0), (width, height)], outline="red", width=3, fill=(255, 0, 0, 80))
-
-            image_with_boxes = Image.alpha_composite(image_with_boxes, overlay)
-            st.image(image_with_boxes, caption="Bilde med markerte eksponeringsområder", use_column_width=True)
-            
-            if overexposed and underexposed:
-                st.write("Generell anbefaling: Bildet inneholder både overeksponerte og undereksponerte områder. Juster ISO, bruk ND-filter og kontroller lysforholdene.")
-            elif overexposed:
-                st.write("Generell anbefaling: Bildet har overeksponerte områder. Vurder å bruke et ND-filter og redusere ISO.")
-            elif underexposed:
-                st.write("Generell anbefaling: Bildet har undereksponerte områder. Øk ISO for å få bedre eksponering.")
-            else:
-                st.write("Bildet ser ut til å ha balanserte lysforhold.")
+            return iso_no_filter, shutter_speed_no_filter, nd_filter
 
         # Generer og vis anbefalinger
         st.write("Analyseresultater og anbefalte innstillinger:")
-        generate_recommendations(avg_brightness, brightness_std, median_brightness, avg_color, aperture_value)
-        
-        # Marker og vis bilde med anbefalte justeringer
-        st.write("Bilde med markerte eksponeringsområder:")
-        highlight_image_areas(image, avg_brightness, brightness_std, median_brightness)
+        iso, shutter_speed, nd_filter = generate_recommendations(avg_brightness, brightness_std, median_brightness, avg_color, aperture_value)
+
+        # Tilbakemelding fra bruker
+        st.write("Var anbefalingene nyttige? Del dine egne innstillinger!")
+        feedback_iso = st.number_input("Hvilken ISO brukte du?", min_value=100, max_value=6400, step=100, value=iso)
+        feedback_shutter_speed = st.selectbox("Hvilken lukkerhastighet brukte du?", ["1/1000s", "1/500s", "1/250s", "1/125s", "1/60s"], index=2)
+        feedback_nd_filter = st.selectbox("Hvilket ND-filter brukte du?", ["Ingen", "ND4", "ND8", "ND16", "ND32", "ND64"], index=0)
+
+        if st.button("Send tilbakemelding"):
+            save_feedback({"iso": feedback_iso, "shutter_speed": feedback_shutter_speed, "nd_filter": feedback_nd_filter})
+            st.write("Takk for din tilbakemelding! Dette vil hjelpe oss med å forbedre anbefalingene.")
 
 # Knapp for å laste opp et nytt bilde
 if st.session_state['uploaded']:
