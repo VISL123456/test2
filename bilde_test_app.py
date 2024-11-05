@@ -199,9 +199,4 @@ if not st.session_state['uploaded']:
             st.session_state['feedback_submitted'] = True
             st.write("Takk for din tilbakemelding! Dette vil hjelpe oss med å forbedre anbefalingene.")
 
-# Knapp for å laste opp et nytt bilde
-if st.session_state['uploaded']:
-    if st.button("Last opp et nytt bilde"):
-        st.session_state['uploaded'] = False
-        st.write("Du kan nå laste opp et nytt bilde ved å bruke opplastingsboksen ovenfor.")
 
