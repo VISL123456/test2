@@ -3,11 +3,7 @@ from PIL import Image, ImageDraw, ImageStat
 import numpy as np
 
 # Tittel på appen
-st.title("Drone Fotoinnstillingsanbefaling ")
-
-# Knapp for å laste opp et nytt bilde
-if st.button("Last opp et nytt bilde"):
-    st.session_state['uploaded'] = False  # Nullstiller opplastingsstatus
+st.title("Drone Fotoinnstillingsanbefaling (Uten Google API)")
 
 # Opplastingsstatus
 if 'uploaded' not in st.session_state:
@@ -116,5 +112,11 @@ if not st.session_state['uploaded']:
         # Marker og vis bilde med anbefalte justeringer
         st.write("Bilde med markerte områder som trenger oppmerksomhet:")
         highlight_image_areas(image, brightness, avg_color)
+
+# Knapp for å laste opp et nytt bilde plassert nederst
+if st.session_state['uploaded']:
+    if st.button("Last opp et nytt bilde"):
+        st.session_state['uploaded'] = False  # Nullstiller opplastingsstatus
+        st.experimental_rerun()  # Oppdaterer appen for å vise opplastingsgrensesnittet igjen
 
 
