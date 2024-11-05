@@ -124,8 +124,9 @@ if not st.session_state['uploaded']:
 
         # Funksjon for å markere områder på bildet som trenger oppmerksomhet
         def highlight_image_areas(image, brightness_map):
-            image_with_boxes = image.copy()
-            draw = ImageDraw.Draw(image_with_boxes)
+            image_with_boxes = image.convert("RGBA")
+            overlay = Image.new("RGBA", image_with_boxes.size, (255, 255, 255, 0))
+            draw = ImageDraw.Draw(overlay)
             width, height = image.size
             region_width = width // 20
             region_height = height // 20
@@ -139,11 +140,13 @@ if not st.session_state['uploaded']:
                 lower = (j + 1) * region_height
                 if brightness > 0.8:
                     overexposed_found = True
-                    draw.rectangle([(left, upper), (right, lower)], outline="red", width=3, fill=(255, 0, 0, 50))
+                    draw.rectangle([(left, upper), (right, lower)], outline="green", width=3, fill=(0, 255, 0, 80))  # Halvgjennomsiktig grønn
                 elif brightness < 0.2:
                     underexposed_found = True
-                    draw.rectangle([(left, upper), (right, lower)], outline="red", width=3, fill=(255, 0, 0, 50))
+                    draw.rectangle([(left, upper), (right, lower)], outline="red", width=3, fill=(255, 0, 0, 80))  # Halvgjennomsiktig rød
 
+            # Kombiner originalbildet med overlegg for halv-gjennomsiktige markeringer
+            image_with_boxes = Image.alpha_composite(image_with_boxes, overlay)
             st.image(image_with_boxes, caption="Bilde med markerte områder", use_column_width=True)
             
             # Generell anbefaling basert på over- eller undereksponering
