@@ -3,7 +3,7 @@ from PIL import Image, ImageDraw, ImageStat
 import numpy as np
 
 # Tittel på appen
-st.title("Drone Fotoinnstillingsanbefaling med Forbedret Eksponeringsanalyse")
+st.title("Drone Fotoinnstillingsanbefaling med Forbedret Eksponeringsanalyse og ND-filter")
 
 # Opplastingsstatus
 if 'uploaded' not in st.session_state:
@@ -25,8 +25,8 @@ if not st.session_state['uploaded']:
         image = Image.open(uploaded_file)
         st.image(image, caption='Opplastet bilde', use_column_width=True)
         
-        # Funksjon for å analysere lysstyrken i bildet over ulike regioner
-        def analyze_brightness_regions(image, grid_size=(4, 4)):
+        # Funksjon for å analysere lysstyrken i bildet over et 20x20 grid
+        def analyze_brightness_regions(image, grid_size=(20, 20)):
             grayscale_image = image.convert("L")
             width, height = grayscale_image.size
             region_width = width // grid_size[0]
@@ -41,7 +41,7 @@ if not st.session_state['uploaded']:
                     lower = (j + 1) * region_height
                     region = grayscale_image.crop((left, upper, right, lower))
                     stat = ImageStat.Stat(region)
-                    brightness = stat.mean[0] / 255  # Normaliser lysstyrke
+                    brightness = stat.mean[0] / 255  # Normaliser lysstyrken til verdi mellom 0 og 1
                     brightness_map.append((i, j, brightness))
                     
             return brightness_map
@@ -65,6 +65,7 @@ if not st.session_state['uploaded']:
             shutter_speed_with_filter = "1/250s"
             aperture = fixed_aperture if fixed_aperture else "f/5.6"
             white_balance = "Auto"
+            nd_filter = "Ingen"
 
             # Juster ISO og lukkerhastighet basert på gjennomsnittlig lysstyrke i ulike regioner
             overexposed_regions = [b for _, _, b in brightness_map if b > 0.8]
@@ -82,13 +83,15 @@ if not st.session_state['uploaded']:
                 iso_no_filter = 100
                 shutter_speed_no_filter = "1/500s"
 
-            # Anbefalinger med ND-filter (redusert lysinnslipp, høyere ISO)
+            # Anbefalinger med ND-filter (for svært lyse forhold)
             if avg_brightness > 0.8 or overexposed_regions:
                 iso_with_filter = 1600
                 shutter_speed_with_filter = "1/60s"
-            elif avg_brightness < 0.6:
+                nd_filter = "ND8"  # Velg ND8 for svært lyse forhold
+            elif avg_brightness > 0.6:
                 iso_with_filter = 800
                 shutter_speed_with_filter = "1/125s"
+                nd_filter = "ND4"  # Velg ND4 for moderat lyse forhold
             else:
                 iso_with_filter = 400
                 shutter_speed_with_filter = "1/200s"
@@ -109,7 +112,7 @@ if not st.session_state['uploaded']:
             - Blenderåpning: {aperture}
             - Hvitbalanse: {white_balance}
 
-            Med ND-filter:
+            Med ND-filter ({nd_filter}):
             - ISO: {iso_with_filter}
             - Lukkerhastighet: {shutter_speed_with_filter}
             - Blenderåpning: {aperture}
@@ -124,8 +127,8 @@ if not st.session_state['uploaded']:
             image_with_boxes = image.copy()
             draw = ImageDraw.Draw(image_with_boxes)
             width, height = image.size
-            region_width = width // 4
-            region_height = height // 4
+            region_width = width // 20
+            region_height = height // 20
 
             recommendations_text = ""
             for i, j, brightness in brightness_map:
@@ -160,3 +163,4 @@ if st.session_state['uploaded']:
     if st.button("Last opp et nytt bilde"):
         st.session_state['uploaded'] = False  # Nullstiller opplastingsstatus
         st.write("Du kan nå laste opp et nytt bilde ved å bruke opplastingsboksen ovenfor.")
+
