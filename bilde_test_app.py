@@ -179,5 +179,16 @@ if not st.session_state['uploaded']:
                 st.write("Bildet ser ut til å ha balanserte lysforhold.")
 
         # Generer og vis anbefalinger
-        st.write("Analyser
+        st.write("Analyseresultater og anbefalte innstillinger:")
+        generate_recommendations(avg_brightness, brightness_std, median_brightness, avg_color, aperture_value)
+        
+        # Marker og vis bilde med anbefalte justeringer
+        st.write("Bilde med markerte eksponeringsområder:")
+        highlight_image_areas(image, avg_brightness, brightness_std, median_brightness)
+
+# Knapp for å laste opp et nytt bilde
+if st.session_state['uploaded']:
+    if st.button("Last opp et nytt bilde"):
+        st.session_state['uploaded'] = False
+        st.write("Du kan nå laste opp et nytt bilde ved å bruke opplastingsboksen ovenfor.")
 
