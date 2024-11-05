@@ -169,12 +169,17 @@ if not st.session_state['uploaded']:
         generate_recommendations(avg_brightness, brightness_std, avg_color, aperture_value)
         highlight_image_areas(image, brightness_map)
         
-        st.write("Var anbefalingene nyttige? Del dine egne innstillinger!")
-        feedback_iso = st.number_input("Hvilken ISO brukte du?", min_value=100, max_value=6400, step=100)
-        feedback_shutter_speed = st.selectbox("Hvilken lukkerhastighet brukte du?", ["1/1000s", "1/500s", "1/250s", "1/125s", "1/60s"])
-        feedback_nd_filter = st.selectbox("Hvilket ND-filter brukte du?", ["Ingen", "ND4", "ND8", "ND16", "ND32", "ND64"])
+# Feedback-felt lagret i session_state
+st.write("Var anbefalingene nyttige? Del dine egne innstillinger!")
+st.session_state['feedback_iso'] = st.number_input("Hvilken ISO brukte du?", min_value=100, max_value=6400, step=100, key="feedback_iso")
+st.session_state['feedback_shutter_speed'] = st.selectbox("Hvilken lukkerhastighet brukte du?", ["1/1000s", "1/500s", "1/250s", "1/125s", "1/60s"], key="feedback_shutter_speed")
+st.session_state['feedback_nd_filter'] = st.selectbox("Hvilket ND-filter brukte du?", ["Ingen", "ND4", "ND8", "ND16", "ND32", "ND64"], key="feedback_nd_filter")
 
-        if st.button("Send tilbakemelding") and not st.session_state['feedback_submitted']:
-            save_feedback({"iso": feedback_iso, "shutter_speed": feedback_shutter_speed, "nd_filter": feedback_nd_filter})
-            st.session_state['feedback_submitted'] = True
-            st.write("Takk for din tilbakemelding! Dette vil hjelpe oss med å forbedre anbefalingene.")
+if st.button("Send tilbakemelding") and not st.session_state['feedback_submitted']:
+    save_feedback({
+        "iso": st.session_state['feedback_iso'],
+        "shutter_speed": st.session_state['feedback_shutter_speed'],
+        "nd_filter": st.session_state['feedback_nd_filter']
+    })
+    st.session_state['feedback_submitted'] = True
+    st.write("Takk for din tilbakemelding! Dette vil hjelpe oss med å forbedre anbefalingene.")
