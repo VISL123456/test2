@@ -94,7 +94,7 @@ if not st.session_state['uploaded']:
                         brightness_map.append(brightness)
                 all_brightness_values.append(np.mean(brightness_map))
 
-            return np.mean(all_brightness_values), np.std(all_brightness_values), np.median(all_brightness_values)
+            return np.mean(all_brightness_values), np.std(all_brightness_values), np.median(all_brightness_values), brightness_map
 
         # Funksjon for å analysere gjennomsnittsfarge
         def analyze_colors(image):
@@ -104,7 +104,7 @@ if not st.session_state['uploaded']:
             return avg_color
 
         # Beregn lysstyrke og farger
-        avg_brightness, brightness_std, median_brightness = analyze_brightness_regions(image)
+        avg_brightness, brightness_std, median_brightness, brightness_map = analyze_brightness_regions(image)
         avg_color = analyze_colors(image)
 
         # Generer anbefalinger med og uten ND-filter basert på lysstyrke og farge
@@ -157,15 +157,46 @@ if not st.session_state['uploaded']:
             st.write(recommendations)
             return iso_no_filter, shutter_speed_no_filter, nd_filter
 
+        # Funksjon for å markere over- og undereksponerte områder
+        def highlight_image_areas(image, brightness_map, grid_size=(20, 20)):
+            image_with_boxes = image.convert("RGBA")
+            overlay = Image.new("RGBA", image_with_boxes.size, (255, 255, 255, 0))
+            draw = ImageDraw.Draw(overlay)
+            width, height = image.size
+            region_width = width // grid_size[0]
+            region_height = height // grid_size[1]
+
+            for i, brightness in enumerate(brightness_map):
+                x = (i % grid_size[0]) * region_width
+                y = (i // grid_size[0]) * region_height
+                if brightness > 0.8:
+                    draw.rectangle([(x, y), (x + region_width, y + region_height)], outline="green", width=3, fill=(0, 255, 0, 80))
+                elif brightness < 0.2:
+                    draw.rectangle([(x, y), (x + region_width, y + region_height)], outline="red", width=3, fill=(255, 0, 0, 80))
+
+            image_with_boxes = Image.alpha_composite(image_with_boxes, overlay)
+            st.image(image_with_boxes, caption="Bilde med markerte eksponeringsområder", use_column_width=True)
+
         # Generer og vis anbefalinger
         st.write("Analyseresultater og anbefalte innstillinger:")
         iso, shutter_speed, nd_filter = generate_recommendations(avg_brightness, brightness_std, median_brightness, avg_color, aperture_value)
 
-        # Tilbakemelding fra bruker
+        # Marker og vis bilde med eksponeringsanalyse
+        st.write("Bilde med markerte eksponeringsområder:")
+        highlight_image_areas(image, brightness_map)
+
+        # Tilbakemelding fra bruker uten app-tilbakestilling
         st.write("Var anbefalingene nyttige? Del dine egne innstillinger!")
-        feedback_iso = st.number_input("Hvilken ISO brukte du?", min_value=100, max_value=6400, step=100, value=iso)
-        feedback_shutter_speed = st.selectbox("Hvilken lukkerhastighet brukte du?", ["1/1000s", "1/500s", "1/250s", "1/125s", "1/60s"], index=2)
-        feedback_nd_filter = st.selectbox("Hvilket ND-filter brukte du?", ["Ingen", "ND4", "ND8", "ND16", "ND32", "ND64"], index=0)
+        if 'feedback_iso' not in st.session_state:
+            st.session_state['feedback_iso'] = iso
+        if 'feedback_shutter_speed' not in st.session_state:
+            st.session_state['feedback_shutter_speed'] = shutter_speed
+        if 'feedback_nd_filter' not in st.session_state:
+            st.session_state['feedback_nd_filter'] = nd_filter
+
+        feedback_iso = st.number_input("Hvilken ISO brukte du?", min_value=100, max_value=6400, step=100, value=st.session_state['feedback_iso'])
+        feedback_shutter_speed = st.selectbox("Hvilken lukkerhastighet brukte du?", ["1/1000s", "1/500s", "1/250s", "1/125s", "1/60s"], index=["1/1000s", "1/500s", "1/250s", "1/125s", "1/60s"].index(st.session_state['feedback_shutter_speed']))
+        feedback_nd_filter = st.selectbox("Hvilket ND-filter brukte du?", ["Ingen", "ND4", "ND8", "ND16", "ND32", "ND64"], index=["Ingen", "ND4", "ND8", "ND16", "ND32", "ND64"].index(st.session_state['feedback_nd_filter']))
 
         if st.button("Send tilbakemelding"):
             save_feedback({"iso": feedback_iso, "shutter_speed": feedback_shutter_speed, "nd_filter": feedback_nd_filter})
