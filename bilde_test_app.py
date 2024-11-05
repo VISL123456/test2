@@ -63,6 +63,7 @@ if not st.session_state['uploaded']:
                         brightness_map.append(brightness)
                 all_brightness_values.append(np.mean(brightness_map))
 
+            # Ta gjennomsnitt, standardavvik og median av flere analyserunder
             return np.mean(all_brightness_values), np.std(all_brightness_values), np.median(all_brightness_values)
 
         # Funksjon for å analysere gjennomsnittsfarge
@@ -146,13 +147,37 @@ if not st.session_state['uploaded']:
             st.write(recommendations)
             return recommendations
 
-        # Generer og vis anbefalinger
-        st.write("Analyseresultater og anbefalte innstillinger:")
-        generate_recommendations(avg_brightness, brightness_std, median_brightness, avg_color, aperture_value)
+        # Funksjon for å markere over- og undereksponerte områder
+        def highlight_image_areas(image, avg_brightness, brightness_std, median_brightness):
+            image_with_boxes = image.convert("RGBA")
+            overlay = Image.new("RGBA", image_with_boxes.size, (255, 255, 255, 0))
+            draw = ImageDraw.Draw(overlay)
+            width, height = image.size
+            region_width = width // 20
+            region_height = height // 20
 
-# Knapp for å laste opp et nytt bilde plassert nederst
-if st.session_state['uploaded']:
-    if st.button("Last opp et nytt bilde"):
-        st.session_state['uploaded'] = False
-        st.write("Du kan nå laste opp et nytt bilde ved å bruke opplastingsboksen ovenfor.")
+            overexposed = avg_brightness > 0.8 or brightness_std > 0.2
+            underexposed = avg_brightness < 0.3 or median_brightness < 0.3
+
+            # Hvis bildet er overeksponert, fyll med grønn skravering
+            if overexposed:
+                draw.rectangle([(0, 0), (width, height)], outline="green", width=3, fill=(0, 255, 0, 80))
+            # Hvis bildet er undereksponert, fyll med rød skravering
+            if underexposed:
+                draw.rectangle([(0, 0), (width, height)], outline="red", width=3, fill=(255, 0, 0, 80))
+
+            image_with_boxes = Image.alpha_composite(image_with_boxes, overlay)
+            st.image(image_with_boxes, caption="Bilde med markerte eksponeringsområder", use_column_width=True)
+            
+            if overexposed and underexposed:
+                st.write("Generell anbefaling: Bildet inneholder både overeksponerte og undereksponerte områder. Juster ISO, bruk ND-filter og kontroller lysforholdene.")
+            elif overexposed:
+                st.write("Generell anbefaling: Bildet har overeksponerte områder. Vurder å bruke et ND-filter og redusere ISO.")
+            elif underexposed:
+                st.write("Generell anbefaling: Bildet har undereksponerte områder. Øk ISO for å få bedre eksponering.")
+            else:
+                st.write("Bildet ser ut til å ha balanserte lysforhold.")
+
+        # Generer og vis anbefalinger
+        st.write("Analyser
 
