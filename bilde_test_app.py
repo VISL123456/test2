@@ -41,13 +41,13 @@ if uploaded_file is not None:
         ]
     }
     response = requests.post(url, headers=headers, data=json.dumps(data))
-    # Send bildet til Google Vision API
+# Send bildet til Google Vision API
 response = requests.post(url, headers=headers, data=json.dumps(data))
 
 # Sjekk om det er en feil, og logg hele feilmeldingen fra API-en
 if response.status_code != 200:
     st.write("Feil fra Google Vision API:", response.text)  # Logger detaljene i svaret
-response.raise_for_status()  # Hev feil hvis statuskode ikke er 200
+    response.raise_for_status()  # Hev feil hvis statuskode ikke er 200
     response.raise_for_status()
     analysis = response.json()
 
