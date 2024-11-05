@@ -3,7 +3,7 @@ from PIL import Image, ImageDraw, ImageStat, ExifTags
 import numpy as np
 
 # Tittel på appen
-st.title("Drone Fotoinnstillingsanbefaling med Forbedret Eksponeringsanalyse og ND-filter")
+st.title("Avansert Drone Fotoinnstillingsanbefaling med Nøyaktig Eksponeringsanalyse og ND-filter")
 
 # Opplastingsstatus
 if 'uploaded' not in st.session_state:
@@ -21,7 +21,7 @@ if not st.session_state['uploaded']:
     uploaded_file = st.file_uploader("Last opp et bilde", type=["jpg", "jpeg", "png"])
     
     if uploaded_file is not None:
-        st.session_state['uploaded'] = True  # Oppdater opplastingsstatus
+        st.session_state['uploaded'] = True
         image = Image.open(uploaded_file)
 
         # Bevarer bildeorienteringen
@@ -37,45 +37,47 @@ if not st.session_state['uploaded']:
             elif exif[orientation] == 8:
                 image = image.rotate(90, expand=True)
         except (AttributeError, KeyError, IndexError):
-            # Bildet har ingen EXIF-data; ingen rotasjon nødvendig
             pass
 
         st.image(image, caption='Opplastet bilde', use_column_width=True)
         
-        # Funksjon for å analysere lysstyrken i bildet over et 20x20 grid
-        def analyze_brightness_regions(image, grid_size=(20, 20)):
+        # Funksjon for å beregne gjennomsnittlig lysstyrke over flere analyserunder
+        def analyze_brightness_regions(image, grid_size=(20, 20), rounds=5):
             grayscale_image = image.convert("L")
             width, height = grayscale_image.size
             region_width = width // grid_size[0]
             region_height = height // grid_size[1]
-            brightness_map = []
+            all_brightness_values = []
 
-            for i in range(grid_size[0]):
-                for j in range(grid_size[1]):
-                    left = i * region_width
-                    upper = j * region_height
-                    right = (i + 1) * region_width
-                    lower = (j + 1) * region_height
-                    region = grayscale_image.crop((left, upper, right, lower))
-                    stat = ImageStat.Stat(region)
-                    brightness = stat.mean[0] / 255  # Normaliser lysstyrken til verdi mellom 0 og 1
-                    brightness_map.append((i, j, brightness))
-                    
-            return brightness_map
+            for _ in range(rounds):
+                brightness_map = []
+                for i in range(grid_size[0]):
+                    for j in range(grid_size[1]):
+                        left = i * region_width
+                        upper = j * region_height
+                        right = (i + 1) * region_width
+                        lower = (j + 1) * region_height
+                        region = grayscale_image.crop((left, upper, right, lower))
+                        stat = ImageStat.Stat(region)
+                        brightness = stat.mean[0] / 255  # Normaliser lysstyrken til verdi mellom 0 og 1
+                        brightness_map.append(brightness)
+                all_brightness_values.append(np.mean(brightness_map))
+
+            return np.mean(all_brightness_values), np.std(all_brightness_values), np.median(all_brightness_values)
 
         # Funksjon for å analysere gjennomsnittsfarge
         def analyze_colors(image):
-            image = image.resize((100, 100))  # Reduser størrelsen for raskere beregning
+            image = image.resize((100, 100))
             colors = np.array(image).reshape(-1, 3)
-            avg_color = colors.mean(axis=0)  # Gjennomsnittlig farge (RGB)
+            avg_color = colors.mean(axis=0)
             return avg_color
 
         # Beregn lysstyrke og farger
-        brightness_map = analyze_brightness_regions(image)
+        avg_brightness, brightness_std, median_brightness = analyze_brightness_regions(image)
         avg_color = analyze_colors(image)
 
         # Generer anbefalinger med og uten ND-filter basert på lysstyrke og farge
-        def generate_recommendations(brightness_map, avg_color, fixed_aperture=None):
+        def generate_recommendations(avg_brightness, brightness_std, median_brightness, avg_color, fixed_aperture=None):
             iso_no_filter = 100
             iso_with_filter = 100
             shutter_speed_no_filter = "1/250s"
@@ -84,13 +86,8 @@ if not st.session_state['uploaded']:
             white_balance = "Auto"
             nd_filter = "Ingen"
 
-            # Juster ISO og lukkerhastighet basert på gjennomsnittlig lysstyrke i ulike regioner
-            overexposed_regions = [b for _, _, b in brightness_map if b > 0.8]
-            underexposed_regions = [b for _, _, b in brightness_map if b < 0.2]
-            avg_brightness = np.mean([b for _, _, b in brightness_map])
-
-            # Anbefalinger uten ND-filter
-            if avg_brightness < 0.3 or underexposed_regions:
+            # Juster ISO og lukkerhastighet basert på gjennomsnittlig og median lysstyrke, samt standardavvik
+            if avg_brightness < 0.3 or median_brightness < 0.3:
                 iso_no_filter = 800
                 shutter_speed_no_filter = "1/125s"
             elif avg_brightness < 0.6:
@@ -100,11 +97,11 @@ if not st.session_state['uploaded']:
                 iso_no_filter = 100
                 shutter_speed_no_filter = "1/500s"
 
-            # Anbefalinger med ND-filter basert på eksponering
-            if avg_brightness > 0.8 or overexposed_regions:
+            # Anbefalinger med ND-filter justert basert på lysstyrkenivå
+            if avg_brightness > 0.8 or brightness_std > 0.2:
                 iso_with_filter = 1600
                 shutter_speed_with_filter = "1/60s"
-                if avg_brightness > 0.9:
+                if avg_brightness > 0.9 or brightness_std > 0.25:
                     nd_filter = "ND64"
                 elif avg_brightness > 0.8:
                     nd_filter = "ND32"
@@ -149,53 +146,13 @@ if not st.session_state['uploaded']:
             st.write(recommendations)
             return recommendations
 
-        # Funksjon for å markere områder på bildet som trenger oppmerksomhet
-        def highlight_image_areas(image, brightness_map):
-            image_with_boxes = image.convert("RGBA")
-            overlay = Image.new("RGBA", image_with_boxes.size, (255, 255, 255, 0))
-            draw = ImageDraw.Draw(overlay)
-            width, height = image.size
-            region_width = width // 20
-            region_height = height // 20
-
-            overexposed_found = False
-            underexposed_found = False
-            for i, j, brightness in brightness_map:
-                left = i * region_width
-                upper = j * region_height
-                right = (i + 1) * region_width
-                lower = (j + 1) * region_height
-                if brightness > 0.8:
-                    overexposed_found = True
-                    draw.rectangle([(left, upper), (right, lower)], outline="green", width=3, fill=(0, 255, 0, 80))  # Halvgjennomsiktig grønn
-                elif brightness < 0.2:
-                    underexposed_found = True
-                    draw.rectangle([(left, upper), (right, lower)], outline="red", width=3, fill=(255, 0, 0, 80))  # Halvgjennomsiktig rød
-
-            # Kombiner originalbildet med overlegg for halv-gjennomsiktige markeringer
-            image_with_boxes = Image.alpha_composite(image_with_boxes, overlay)
-            st.image(image_with_boxes, caption="Bilde med markerte områder", use_column_width=True)
-            
-            # Generell anbefaling basert på over- eller undereksponering
-            if overexposed_found and underexposed_found:
-                st.write("Generell anbefaling: Bildet inneholder både overeksponerte og undereksponerte områder. Juster ISO, bruk ND-filter og kontroller lysforholdene.")
-            elif overexposed_found:
-                st.write("Generell anbefaling: Bildet har overeksponerte områder. Vurder å bruke et ND-filter og redusere ISO.")
-            elif underexposed_found:
-                st.write("Generell anbefaling: Bildet har undereksponerte områder. Øk ISO for å få bedre eksponering.")
-            else:
-                st.write("Bildet ser ut til å ha balanserte lysforhold.")
-
         # Generer og vis anbefalinger
         st.write("Analyseresultater og anbefalte innstillinger:")
-        generate_recommendations(brightness_map, avg_color, aperture_value)
-        
-        # Marker og vis bilde med anbefalte justeringer
-        st.write("Bilde med markerte områder som trenger oppmerksomhet:")
-        highlight_image_areas(image, brightness_map)
+        generate_recommendations(avg_brightness, brightness_std, median_brightness, avg_color, aperture_value)
 
 # Knapp for å laste opp et nytt bilde plassert nederst
 if st.session_state['uploaded']:
     if st.button("Last opp et nytt bilde"):
-        st.session_state['uploaded'] = False  # Nullstiller opplastingsstatus
+        st.session_state['uploaded'] = False
         st.write("Du kan nå laste opp et nytt bilde ved å bruke opplastingsboksen ovenfor.")
+
