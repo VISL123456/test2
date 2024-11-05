@@ -29,26 +29,30 @@ if uploaded_file is not None:
     image_bytes = uploaded_file.read()
     image_base64 = base64.b64encode(image_bytes).decode("utf-8")
 
-    # Send bildet til Google Vision API
+    # Sett opp riktig struktur for API-forespørselen
     url = f"https://vision.googleapis.com/v1/images:annotate?key={API_KEY}"
     headers = {'Content-Type': 'application/json'}
     data = {
         "requests": [
             {
                 "image": {"content": image_base64},
-                "features": [{"type": "LABEL_DETECTION"}, {"type": "IMAGE_PROPERTIES"}]
+                "features": [
+                    {"type": "LABEL_DETECTION"},
+                    {"type": "IMAGE_PROPERTIES"}
+                ]
             }
         ]
     }
-    response = requests.post(url, headers=headers, data=json.dumps(data))
-# Send bildet til Google Vision API
-response = requests.post(url, headers=headers, data=json.dumps(data))
 
-# Sjekk om det er en feil, og logg hele feilmeldingen fra API-en
-if response.status_code != 200:
-    st.write("Feil fra Google Vision API:", response.text)  # Logger detaljene i svaret
-    response.raise_for_status()  # Hev feil hvis statuskode ikke er 200
+    # Send forespørselen til Google Vision API
+    response = requests.post(url, headers=headers, data=json.dumps(data))
+    
+    # Sjekk for feil og logg detaljer om nødvendig
+    if response.status_code != 200:
+        st.write("Feil fra Google Vision API:", response.text)
     response.raise_for_status()
+
+    # Parse response
     analysis = response.json()
 
     # Funksjon for å generere anbefalinger basert på analyse
