@@ -1,15 +1,9 @@
 import streamlit as st
-import requests
-import json
-import base64
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageStat
 import numpy as np
 
-# Sett inn din Google Cloud Vision API-nøkkel her
-API_KEY = 'AIzaSyBubK99b3Tc6_rWyx_cjdOuTfEVT_RWhv0'
-
 # Tittel på appen
-st.title("Drone Fotoinnstillingsanbefaling")
+st.title("Drone Fotoinnstillingsanbefaling (Uten Google API)")
 
 # Velg om dronen har fast blenderåpning
 fast_aperture = st.selectbox("Har dronen fast blenderåpning?", ["Ja", "Nei"])
@@ -24,65 +18,52 @@ if uploaded_file is not None:
     # Les bildet og vis det
     image = Image.open(uploaded_file)
     st.image(image, caption='Opplastet bilde', use_column_width=True)
-    
-    # Konverter bilde til base64 for API-forespørsel
-    image_bytes = uploaded_file.read()
-    image_base64 = base64.b64encode(image_bytes).decode("utf-8")
 
-    # Sett opp riktig struktur for API-forespørselen
-    url = f"https://vision.googleapis.com/v1/images:annotate?key={API_KEY}"
-    headers = {'Content-Type': 'application/json'}
-    data = {
-        "requests": [
-            {
-                "image": {"content": image_base64},
-                "features": [
-                    {"type": "LABEL_DETECTION"},
-                    {"type": "IMAGE_PROPERTIES"}
-                ]
-            }
-        ]
-    }
+    # Funksjon for å analysere lysstyrken i bildet
+    def analyze_brightness(image):
+        # Konverter bildet til gråtoner og beregn gjennomsnittlig lysstyrke
+        grayscale_image = image.convert("L")
+        stat = ImageStat.Stat(grayscale_image)
+        brightness = stat.mean[0] / 255  # Normaliser lysstyrken til verdi mellom 0 og 1
+        return brightness
 
-    # Send forespørselen til Google Vision API
-    response = requests.post(url, headers=headers, data=json.dumps(data))
-    
-    # Sjekk for feil og logg detaljer om nødvendig
-    if response.status_code != 200:
-        st.write("Feil fra Google Vision API:", response.text)
-    response.raise_for_status()
+    # Funksjon for å analysere dominerende farger
+    def analyze_colors(image):
+        image = image.resize((100, 100))  # Reduser størrelsen for raskere beregning
+        colors = np.array(image).reshape(-1, 3)
+        avg_color = colors.mean(axis=0)  # Gjennomsnittlig farge (RGB)
+        return avg_color
 
-    # Parse response
-    analysis = response.json()
+    # Beregn lysstyrke og farger
+    brightness = analyze_brightness(image)
+    avg_color = analyze_colors(image)
 
-    # Funksjon for å generere anbefalinger basert på analyse
-    def generate_recommendations(analysis, fixed_aperture=None):
-        colors = analysis['responses'][0]['imagePropertiesAnnotation']['dominantColors']['colors']
-        avg_brightness = sum(color['score'] for color in colors) / len(colors)
-
+    # Generer anbefalinger basert på lysstyrke og farge
+    def generate_recommendations(brightness, avg_color, fixed_aperture=None):
         iso = 100
         shutter_speed = "1/250s"
         aperture = fixed_aperture if fixed_aperture else "f/5.6"
         white_balance = "Auto"
 
-        if avg_brightness < 0.3:
+        # Juster ISO og lukkerhastighet basert på lysstyrke
+        if brightness < 0.3:
             iso = 800
             shutter_speed = "1/125s"
-        elif avg_brightness < 0.6:
+        elif brightness < 0.6:
             iso = 400
             shutter_speed = "1/200s"
         else:
             iso = 100
             shutter_speed = "1/500s"
 
-        for color in colors:
-            r, g, b = color['color']['red'], color['color']['green'], color['color']['blue']
-            if r > 200 and g > 200 and b > 200:
-                white_balance = "Dagslys"
-            elif b > r and b > g:
-                white_balance = "Skumring"
-            elif r > g and r > b:
-                white_balance = "Solnedgang"
+        # Juster hvitbalanse basert på dominerende farge
+        r, g, b = avg_color
+        if r > 200 and g > 200 and b > 200:
+            white_balance = "Dagslys"
+        elif b > r and b > g:
+            white_balance = "Skumring"
+        elif r > g and r > b:
+            white_balance = "Solnedgang"
 
         recommendations = f"""Anbefalte Innstillinger:
         - ISO: {iso}
@@ -95,29 +76,22 @@ if uploaded_file is not None:
         return recommendations
 
     # Funksjon for å markere områder på bildet som trenger oppmerksomhet
-    def highlight_image_areas(image, analysis):
+    def highlight_image_areas(image, brightness, avg_color):
         image_with_boxes = image.copy()
         draw = ImageDraw.Draw(image_with_boxes)
+        width, height = image.size
         
-        colors = analysis['responses'][0]['imagePropertiesAnnotation']['dominantColors']['colors']
+        # Marker områder basert på lysstyrke og farger
         recommendations_text = ""
+        if brightness > 0.8:
+            color = "red"
+            recommendations_text += "Områder er overeksponert - vurder lavere ISO.\n"
+            draw.rectangle([(width*0.1, height*0.1), (width*0.9, height*0.9)], outline=color, width=3)
+        elif brightness < 0.2:
+            color = "blue"
+            recommendations_text += "Områder er undereksponert - vurder høyere ISO.\n"
+            draw.rectangle([(width*0.1, height*0.1), (width*0.9, height*0.9)], outline=color, width=3)
 
-        for color_info in colors:
-            brightness = 0.299 * color_info['color']['red'] + 0.587 * color_info['color']['green'] + 0.114 * color_info['color']['blue']
-            width, height = image.size
-            x, y = np.random.randint(0, width - 100), np.random.randint(0, height - 50)
-            
-            if brightness > 200:
-                color = "red"
-                recommendations_text += "Område markert i rødt er overeksponert - vurder lavere ISO.\n"
-            elif brightness < 50:
-                color = "blue"
-                recommendations_text += "Område markert i blått er undereksponert - vurder høyere ISO.\n"
-            else:
-                continue
-
-            draw.rectangle([(x, y), (x + 100, y + 50)], outline=color, width=3)
-        
         st.image(image_with_boxes, caption="Bilde med markerte områder", use_column_width=True)
         if recommendations_text:
             st.write("Anbefalinger for justeringer:")
@@ -127,8 +101,9 @@ if uploaded_file is not None:
 
     # Generer og vis anbefalinger
     st.write("Analyseresultater og anbefalte innstillinger:")
-    generate_recommendations(analysis, aperture_value)
+    generate_recommendations(brightness, avg_color, aperture_value)
     
     # Marker og vis bilde med anbefalte justeringer
     st.write("Bilde med markerte områder som trenger oppmerksomhet:")
-    highlight_image_areas(image, analysis)
+    highlight_image_areas(image, brightness, avg_color)
+
