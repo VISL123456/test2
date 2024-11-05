@@ -117,6 +117,5 @@ if not st.session_state['uploaded']:
 if st.session_state['uploaded']:
     if st.button("Last opp et nytt bilde"):
         st.session_state['uploaded'] = False  # Nullstiller opplastingsstatus
-        st.experimental_rerun()  # Oppdaterer appen for å vise opplastingsgrensesnittet igjen
-
+        st.write("Du kan nå laste opp et nytt bilde ved å bruke opplastingsboksen ovenfor.")
 
