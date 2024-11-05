@@ -6,7 +6,7 @@ from PIL import Image, ImageDraw
 import numpy as np
 
 # Sett inn din Google Cloud Vision API-nøkkel her
-API_KEY = 'AIzaSyBUQdMP9n95P02q1_Kvc8oHWpf3YgyhQqg'
+API_KEY = 'AIzaSyBubK99b3Tc6_rWyx_cjdOuTfEVT_RWhv0'
 
 # Tittel på appen
 st.title("Drone Fotoinnstillingsanbefaling")
