@@ -39,6 +39,8 @@ st.title("Selvforbedrende Drone Fotoinnstillingsanbefaling med Brukerlæring")
 # Opplastingsstatus
 if 'uploaded' not in st.session_state:
     st.session_state['uploaded'] = False
+if 'feedback_submitted' not in st.session_state:
+    st.session_state['feedback_submitted'] = False
 
 # Hvis brukeren allerede har lastet opp et bilde
 if not st.session_state['uploaded']:
@@ -53,6 +55,7 @@ if not st.session_state['uploaded']:
     
     if uploaded_file is not None:
         st.session_state['uploaded'] = True
+        st.session_state['feedback_submitted'] = False
         image = Image.open(uploaded_file)
 
         # Bevarer bildeorienteringen
@@ -187,19 +190,13 @@ if not st.session_state['uploaded']:
 
         # Tilbakemelding fra bruker uten app-tilbakestilling
         st.write("Var anbefalingene nyttige? Del dine egne innstillinger!")
-        if 'feedback_iso' not in st.session_state:
-            st.session_state['feedback_iso'] = iso
-        if 'feedback_shutter_speed' not in st.session_state:
-            st.session_state['feedback_shutter_speed'] = shutter_speed
-        if 'feedback_nd_filter' not in st.session_state:
-            st.session_state['feedback_nd_filter'] = nd_filter
+        feedback_iso = st.number_input("Hvilken ISO brukte du?", min_value=100, max_value=6400, step=100, key="feedback_iso")
+        feedback_shutter_speed = st.selectbox("Hvilken lukkerhastighet brukte du?", ["1/1000s", "1/500s", "1/250s", "1/125s", "1/60s"], key="feedback_shutter_speed")
+        feedback_nd_filter = st.selectbox("Hvilket ND-filter brukte du?", ["Ingen", "ND4", "ND8", "ND16", "ND32", "ND64"], key="feedback_nd_filter")
 
-        feedback_iso = st.number_input("Hvilken ISO brukte du?", min_value=100, max_value=6400, step=100, value=st.session_state['feedback_iso'])
-        feedback_shutter_speed = st.selectbox("Hvilken lukkerhastighet brukte du?", ["1/1000s", "1/500s", "1/250s", "1/125s", "1/60s"], index=["1/1000s", "1/500s", "1/250s", "1/125s", "1/60s"].index(st.session_state['feedback_shutter_speed']))
-        feedback_nd_filter = st.selectbox("Hvilket ND-filter brukte du?", ["Ingen", "ND4", "ND8", "ND16", "ND32", "ND64"], index=["Ingen", "ND4", "ND8", "ND16", "ND32", "ND64"].index(st.session_state['feedback_nd_filter']))
-
-        if st.button("Send tilbakemelding"):
+        if st.button("Send tilbakemelding") and not st.session_state['feedback_submitted']:
             save_feedback({"iso": feedback_iso, "shutter_speed": feedback_shutter_speed, "nd_filter": feedback_nd_filter})
+            st.session_state['feedback_submitted'] = True
             st.write("Takk for din tilbakemelding! Dette vil hjelpe oss med å forbedre anbefalingene.")
 
 # Knapp for å laste opp et nytt bilde
